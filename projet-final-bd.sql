@@ -1,8 +1,12 @@
 -- MySQL dump 10.13  Distrib 8.0.36, for Win64 (x86_64)
 --
--- Host: 127.0.0.1    Database: tp3
+-- Host: 127.0.0.1    Database: projet_final
 -- ------------------------------------------------------
 -- Server version	5.7.11
+
+DROP DATABASE IF EXISTS projet_final_8TRD151;
+CREATE DATABASE IF NOT EXISTS projet_final_8TRD151;
+USE projet_final_8TRD151;
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -23,7 +27,7 @@ DROP TABLE IF EXISTS `agent`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `agent` (
-  `id_agent` int(11) NOT NULL,
+  `id_agent` int(11) NOT NULL AUTO_INCREMENT,
   `nom_agent` varchar(45) NOT NULL,
   `prenom_agent` varchar(60) NOT NULL,
   PRIMARY KEY (`id_agent`)
@@ -47,7 +51,7 @@ DROP TABLE IF EXISTS `allee`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `allee` (
-  `id_allee` int(11) NOT NULL,
+  `id_allee` int(11) NOT NULL AUTO_INCREMENT,
   `id_espace_stationnement` int(11) NOT NULL,
   `designation_allee` varchar(45) NOT NULL,
   `sens_circulation` enum('Entrée','Sortie','Bidirectionnel') NOT NULL,
@@ -77,7 +81,7 @@ DROP TABLE IF EXISTS `cours`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `cours` (
-  `id_cours` int(11) NOT NULL,
+  `id_cours` int(11) NOT NULL AUTO_INCREMENT,
   `nom_du_cours` varchar(65) NOT NULL,
   `nombre_heures` tinyint(3) unsigned NOT NULL,
   PRIMARY KEY (`id_cours`)
@@ -131,7 +135,7 @@ DROP TABLE IF EXISTS `espace_stationnement`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `espace_stationnement` (
-  `id_espace_stationnement` int(11) NOT NULL,
+  `id_espace_stationnement` int(11) NOT NULL AUTO_INCREMENT,
   `designation_espace_stationnement` varchar(45) NOT NULL,
   `id_universite` int(11) NOT NULL,
   PRIMARY KEY (`id_espace_stationnement`),
@@ -221,7 +225,7 @@ DROP TABLE IF EXISTS `place`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `place` (
-  `id_place` int(11) NOT NULL,
+  `id_place` int(11) NOT NULL AUTO_INCREMENT,
   `type_de_place` enum('standard','personnes à mobilité réduite','véhicules électriques') NOT NULL,
   `id_allee` int(11) NOT NULL,
   `disponibilite` enum('Oui','Non') NOT NULL,
@@ -248,7 +252,7 @@ DROP TABLE IF EXISTS `place_reservee`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `place_reservee` (
-  `id_place` int(11) NOT NULL,
+  `id_place` int(11) NOT NULL AUTO_INCREMENT,
   `id_etudiant` varchar(10) NOT NULL,
   `date_heure_debut` datetime NOT NULL,
   `date_heure_fin` datetime NOT NULL,
@@ -276,7 +280,7 @@ DROP TABLE IF EXISTS `universite`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `universite` (
-  `id_universite` int(11) NOT NULL,
+  `id_universite` int(11) NOT NULL AUTO_INCREMENT,
   `nom_universite` varchar(45) NOT NULL,
   `sigle` varchar(10) NOT NULL,
   `numero_civique` varchar(5) NOT NULL,

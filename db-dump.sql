@@ -1,6 +1,6 @@
 -- MySQL dump 10.13  Distrib 8.0.36, for macos14 (arm64)
 --
--- Host: localhost    Database: uqac-db
+-- Host: localhost    Database: projet_final_8TRD151
 -- ------------------------------------------------------
 -- Server version	8.3.0
 
@@ -16,10 +16,10 @@
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
 --
--- Dumping events for database 'uqac-db'
+-- Dumping events for database 'projet_final_8TRD151'
 --
 /*!50106 SET @save_time_zone= @@TIME_ZONE */ ;
-/*!50106 DROP EVENT IF EXISTS `maj_places_reserves` */;
+/*!50106 DROP EVENT IF EXISTS `update_reserved_places` */;
 DELIMITER ;;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;;
 /*!50003 SET @saved_cs_results     = @@character_set_results */ ;;
@@ -31,11 +31,9 @@ DELIMITER ;;
 /*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;;
 /*!50003 SET @saved_time_zone      = @@time_zone */ ;;
 /*!50003 SET time_zone             = 'SYSTEM' */ ;;
-/*!50106 CREATE*/ /*!50117 DEFINER=`root`@`localhost`*/ /*!50106 EVENT `maj_places_reserves` ON SCHEDULE EVERY 5 MINUTE STARTS '2024-04-07 18:06:40' ON COMPLETION NOT PRESERVE ENABLE DO BEGIN
-    UPDATE place_reservee
-    SET id_etudiant = NULL, date_heure_arrivee = NULL, date_heure_depart = NULL
-    WHERE date_heure_depart <= NOW();
-END */ ;;
+/*!50106 CREATE*/ /*!50117 DEFINER=`root`@`localhost`*/ /*!50106 EVENT `update_reserved_places` ON SCHEDULE EVERY 5 MINUTE STARTS '2024-04-21 11:45:45' ON COMPLETION NOT PRESERVE ENABLE DO UPDATE place_reservee
+    SET disponibilite = 'Non'
+    WHERE date_heure_fin <= NOW() */ ;;
 /*!50003 SET time_zone             = @saved_time_zone */ ;;
 /*!50003 SET sql_mode              = @saved_sql_mode */ ;;
 /*!50003 SET character_set_client  = @saved_cs_client */ ;;
@@ -45,9 +43,9 @@ DELIMITER ;
 /*!50106 SET TIME_ZONE= @save_time_zone */ ;
 
 --
--- Dumping routines for database 'uqac-db'
+-- Dumping routines for database 'projet_final_8TRD151'
 --
-/*!50003 DROP FUNCTION IF EXISTS `generer_id_etudiant` */;
+/*!50003 DROP FUNCTION IF EXISTS `generate_student_id` */;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
 /*!50003 SET @saved_cs_results     = @@character_set_results */ ;
 /*!50003 SET @saved_col_connection = @@collation_connection */ ;
@@ -57,11 +55,18 @@ DELIMITER ;
 /*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
 /*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
 DELIMITER ;;
-CREATE DEFINER=`root`@`localhost` FUNCTION `generer_id_etudiant`() RETURNS varchar(10) CHARSET utf8mb4
+CREATE DEFINER=`root`@`localhost` FUNCTION `generate_student_id`() RETURNS varchar(10) CHARSET utf8mb4
+    DETERMINISTIC
 BEGIN
-    DECLARE nouvel_id VARCHAR(10);
-    SET nouvel_id = CONCAT('ETU-', LPAD((SELECT IFNULL(MAX(SUBSTRING(id_etudiant, 5)), 0) + 1 FROM etudiant), 6, '0'));
-    RETURN nouvel_id;
+    DECLARE prefix VARCHAR(3);
+    DECLARE unique_number INT;
+    DECLARE formatted_id VARCHAR(10);
+    
+    SET prefix = 'ETU';
+    SET unique_number = (SELECT IFNULL(MAX(SUBSTRING(id_etudiant, 5)), 0) + 1 FROM etudiant);
+    SET formatted_id = CONCAT(prefix, LPAD(unique_number, 6, '0'));
+    
+    RETURN formatted_id;
 END ;;
 DELIMITER ;
 /*!50003 SET sql_mode              = @saved_sql_mode */ ;
@@ -333,6 +338,93 @@ DELIMITER ;
 /*!50003 SET character_set_client  = @saved_cs_client */ ;
 /*!50003 SET character_set_results = @saved_cs_results */ ;
 /*!50003 SET collation_connection  = @saved_col_connection */ ;
+/*!50003 DROP PROCEDURE IF EXISTS `reserve_parking_spot` */;
+/*!50003 SET @saved_cs_client      = @@character_set_client */ ;
+/*!50003 SET @saved_cs_results     = @@character_set_results */ ;
+/*!50003 SET @saved_col_connection = @@collation_connection */ ;
+/*!50003 SET character_set_client  = utf8mb4 */ ;
+/*!50003 SET character_set_results = utf8mb4 */ ;
+/*!50003 SET collation_connection  = utf8mb4_0900_ai_ci */ ;
+/*!50003 SET @saved_sql_mode       = @@sql_mode */ ;
+/*!50003 SET sql_mode              = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION' */ ;
+DELIMITER ;;
+CREATE DEFINER=`root`@`localhost` PROCEDURE `reserve_parking_spot`(
+    IN student_id VARCHAR(10),
+    IN arrival_datetime DATETIME,
+    IN departure_datetime DATETIME
+)
+BEGIN
+    DECLARE parking_space_id INT;
+    DECLARE parking_spot_id INT;
+    DECLARE course_count INT;
+    
+    -- Validate parameters
+    IF student_id IS NULL OR arrival_datetime IS NULL OR departure_datetime IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: All parameters must be provided.';
+    END IF;
+
+    -- Check if student is enrolled in a course during parking hours
+    SET course_count = (
+        SELECT COUNT(*)
+        FROM cours_suivi cs
+        WHERE cs.id_etudiant = student_id
+        AND (arrival_datetime BETWEEN cs.heure_debut AND cs.heure_fin
+             OR departure_datetime BETWEEN cs.heure_debut AND cs.heure_fin)
+    );
+
+    IF course_count = 0 THEN
+        -- Record parking violation
+        INSERT INTO violation_stationnement (code_permanent, nom_etudiant, prenom_etudiant, numero_plaque, date_tentative_reservation)
+        SELECT e.code_permanent, e.nom_etudiant, e.prenom_etudiant, e.numero_plaque, NOW()
+        FROM etudiant e
+        WHERE e.id_etudiant = student_id;
+
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: Student is not enrolled in a course during parking hours.';
+    END IF;
+
+    -- Find available parking spot
+    SELECT p.id_espace_stationnement INTO parking_space_id
+    FROM espace_stationnement p
+    WHERE p.nombre_places_dispo > 0
+    LIMIT 1;
+
+    IF parking_space_id IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: No available parking spots.';
+    END IF;
+
+    SELECT pl.id_place INTO parking_spot_id
+    FROM place pl
+    WHERE pl.id_allee IN (SELECT a.id_allee FROM allee a WHERE a.id_espace_stationnement = parking_space_id)
+    AND pl.disponibilite = 'Oui'
+    LIMIT 1;
+
+    IF parking_spot_id IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: No available parking spots.';
+    END IF;
+
+    -- Reserve parking spot
+    INSERT INTO place_reservee (id_place, id_etudiant, date_heure_debut, date_heure_fin)
+    VALUES (parking_spot_id, student_id, arrival_datetime, departure_datetime);
+
+    -- Update available parking spots count
+    UPDATE allee a
+    SET a.nombre_places_dispo = a.nombre_places_dispo - 1
+    WHERE a.id_allee IN (SELECT pl.id_allee FROM place pl WHERE pl.id_place = parking_spot_id);
+
+    -- Display reservation details
+    SELECT es.designation_espace_stationnement, a.designation_allee, a.sens_circulation, pl.id_place, pl.type_de_place, 
+           TIMEDIFF(departure_datetime, arrival_datetime) * es.tarif_horaire AS montant_a_payer, 
+           arrival_datetime AS date_heure_arrivee, departure_datetime AS date_heure_depart
+    FROM espace_stationnement es
+    JOIN allee a ON es.id_espace_stationnement = a.id_espace_stationnement
+    JOIN place pl ON a.id_allee = pl.id_allee
+    WHERE pl.id_place = parking_spot_id;
+END ;;
+DELIMITER ;
+/*!50003 SET sql_mode              = @saved_sql_mode */ ;
+/*!50003 SET character_set_client  = @saved_cs_client */ ;
+/*!50003 SET character_set_results = @saved_cs_results */ ;
+/*!50003 SET collation_connection  = @saved_col_connection */ ;
 /*!50003 DROP PROCEDURE IF EXISTS `supprimer_etudiant` */;
 /*!50003 SET @saved_cs_client      = @@character_set_client */ ;
 /*!50003 SET @saved_cs_results     = @@character_set_results */ ;
@@ -373,4 +465,4 @@ DELIMITER ;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2024-04-07 18:07:34
+-- Dump completed on 2024-04-21 11:47:51

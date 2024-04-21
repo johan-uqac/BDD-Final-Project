@@ -1,88 +1,76 @@
-DELIMITER //
+DELIMITER $$
 
-CREATE PROCEDURE reserver_place_stationnement(
-    IN p_id_etudiant VARCHAR(10),
-    IN p_date_heure_arrivee DATETIME,
-    IN p_date_heure_depart DATETIME
+CREATE PROCEDURE reserve_parking_spot(
+    IN student_id VARCHAR(10),
+    IN arrival_datetime DATETIME,
+    IN departure_datetime DATETIME
 )
 BEGIN
-    DECLARE id_place INT;
-    DECLARE id_allee INT;
-    DECLARE id_espace_stationnement INT;
+    DECLARE parking_space_id INT;
+    DECLARE parking_spot_id INT;
+    DECLARE course_count INT;
     
-    -- Validation des données fournies
-    IF p_id_etudiant IS NULL OR p_date_heure_arrivee IS NULL OR p_date_heure_depart IS NULL THEN
-        SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Toutes les informations nécessaires doivent être fournies.';
-    END IF;
-    
-    -- Vérification de l'existence de l'étudiant
-    IF NOT EXISTS (SELECT 1 FROM etudiant WHERE id_etudiant = p_id_etudiant) THEN
-        SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'L''étudiant spécifié n''existe pas.';
+    -- Validate parameters
+    IF student_id IS NULL OR arrival_datetime IS NULL OR departure_datetime IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: All parameters must be provided.';
     END IF;
 
-    -- Vérifier si l'étudiant est inscrit à un cours pendant les heures de stationnement
-    IF NOT EXISTS (
-        SELECT 1 FROM cours_suivi cs
-        JOIN cours c ON cs.id_cours = c.id_cours
-        WHERE cs.id_etudiant = p_id_etudiant
-        AND p_date_heure_arrivee BETWEEN cs.heure_debut AND cs.heure_fin
-        AND p_date_heure_depart BETWEEN cs.heure_debut AND cs.heure_fin
-    ) THEN
-        -- Enregistrer une violation de stationnement
-        INSERT INTO violation_stationnement (code_permanent, nom_etudiant, prenom_etudiant, plaque_vehicule, date_heure_tentative)
-        SELECT code_permanent, nom_etudiant, prenom_etudiant, plaque_vehicule, NOW()
-        FROM etudiant
-        WHERE id_etudiant = p_id_etudiant;
-        
-        SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Aucun cours inscrit pendant les heures de stationnement.';
+    -- Check if student is enrolled in a course during parking hours
+    SET course_count = (
+        SELECT COUNT(*)
+        FROM cours_suivi cs
+        WHERE cs.id_etudiant = student_id
+        AND (arrival_datetime BETWEEN cs.heure_debut AND cs.heure_fin
+             OR departure_datetime BETWEEN cs.heure_debut AND cs.heure_fin)
+    );
+
+    IF course_count = 0 THEN
+        -- Record parking violation
+        INSERT INTO violation_stationnement (code_permanent, nom_etudiant, prenom_etudiant, numero_plaque, date_tentative_reservation)
+        SELECT e.code_permanent, e.nom_etudiant, e.prenom_etudiant, e.numero_plaque, NOW()
+        FROM etudiant e
+        WHERE e.id_etudiant = student_id;
+
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: Student is not enrolled in a course during parking hours.';
     END IF;
 
-    -- Recherche d'une place disponible dans une allée de l'université de l'étudiant
-    SELECT pr.id_place INTO id_place
-    FROM place p
-    JOIN allee a ON p.id_allee = a.id_allee
-    JOIN espace_stationnement e ON a.id_espace_stationnement = e.id_espace_stationnement
-    LEFT JOIN place_reservee pr ON p.id_place = pr.id_place
-    WHERE e.id_universite = (SELECT id_universite FROM etudiant WHERE id_etudiant = p_id_etudiant)
-    AND pr.id_etudiant IS NULL
+    -- Find available parking spot
+    SELECT p.id_espace_stationnement INTO parking_space_id
+    FROM espace_stationnement p
+    WHERE p.nombre_places_dispo > 0
     LIMIT 1;
 
-    -- Si aucune place disponible n'est trouvée, retourner un message d'erreur
-    IF id_place IS NULL THEN
-        SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'Aucune place disponible dans l''université de l''étudiant.';
+    IF parking_space_id IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: No available parking spots.';
     END IF;
 
-    -- Obtenir l'ID de l'allée et de l'espace de stationnement pour affichage
-    SELECT a.id_allee, e.id_espace_stationnement INTO id_allee, id_espace_stationnement
-    FROM place p
-    JOIN allee a ON p.id_allee = a.id_allee
-    JOIN espace_stationnement e ON a.id_espace_stationnement = e.id_espace_stationnement
-    WHERE p.id_place = id_place;
+    SELECT pl.id_place INTO parking_spot_id
+    FROM place pl
+    WHERE pl.id_allee IN (SELECT a.id_allee FROM allee a WHERE a.id_espace_stationnement = parking_space_id)
+    AND pl.disponibilite = 'Oui'
+    LIMIT 1;
 
-    -- Actualiser la disponibilité de la place réservée
-    UPDATE place_reservee
-    SET id_etudiant = p_id_etudiant, date_heure_arrivee = p_date_heure_arrivee, date_heure_depart = p_date_heure_depart
-    WHERE id_place = id_place;
-    
-    -- Déclencheur pour actualiser le nombre de places disponibles dans l'allée de la place réservée
-    CREATE TRIGGER update_places_disponibles
-    AFTER UPDATE ON place_reservee
-    FOR EACH ROW
-    BEGIN
-        UPDATE allee
-        SET nombre_places_dispo = (SELECT COUNT(*) FROM place WHERE id_allee = NEW.id_place AND id_etudiant IS NULL)
-        WHERE id_allee = NEW.id_place;
-    END;
-    
-    -- Afficher les détails de la réservation
-    SELECT e.designation_espace_stationnement, a.designation_allee, p.type_de_place, p.numero_place, p.tarif_horaire, p_date_heure_arrivee, p_date_heure_depart
-    FROM place_reservee pr
-    JOIN place p ON pr.id_place = p.id_place
-    JOIN allee a ON p.id_allee = a.id_allee
-    JOIN espace_stationnement e ON a.id_espace_stationnement = e.id_espace_stationnement
-    WHERE pr.id_place = id_place;
-END;
+    IF parking_spot_id IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Error: No available parking spots.';
+    END IF;
+
+    -- Reserve parking spot
+    INSERT INTO place_reservee (id_place, id_etudiant, date_heure_debut, date_heure_fin)
+    VALUES (parking_spot_id, student_id, arrival_datetime, departure_datetime);
+
+    -- Update available parking spots count
+    UPDATE allee a
+    SET a.nombre_places_dispo = a.nombre_places_dispo - 1
+    WHERE a.id_allee IN (SELECT pl.id_allee FROM place pl WHERE pl.id_place = parking_spot_id);
+
+    -- Display reservation details
+    SELECT es.designation_espace_stationnement, a.designation_allee, a.sens_circulation, pl.id_place, pl.type_de_place, 
+           TIMEDIFF(departure_datetime, arrival_datetime) * es.tarif_horaire AS montant_a_payer, 
+           arrival_datetime AS date_heure_arrivee, departure_datetime AS date_heure_depart
+    FROM espace_stationnement es
+    JOIN allee a ON es.id_espace_stationnement = a.id_espace_stationnement
+    JOIN place pl ON a.id_allee = pl.id_allee
+    WHERE pl.id_place = parking_spot_id;
+END$$
+
+DELIMITER ;
